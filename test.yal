@@ -1,0 +1,13 @@
+// Declaración de variables
+int a = 10;
+float b = 20.5;
+
+// Expresión aritmética
+float c = a + b * 2;
+
+// Sentencia de control
+if (c > 30) {
+    print("c es mayor que 30");
+} else {
+    print("c es menor o igual que 30");
+}
