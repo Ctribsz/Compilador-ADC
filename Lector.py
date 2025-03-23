@@ -160,6 +160,47 @@ def manual_split(expr, delimiter):
         parts.append(current.strip())
     return parts
 
+
+def expand_repetition_operators(expr: str) -> str:
+    """
+    Reemplaza:
+    - A+ por AA*
+    - A? por (A|_)
+    """
+    i = 0
+    result = ""
+    while i < len(expr):
+        if expr[i] in ['+', '?'] and i > 0:
+            prev = ""
+            j = len(result) - 1
+            if result[j] == ')':
+                count = 1
+                j -= 1
+                while j >= 0:
+                    if result[j] == ')':
+                        count += 1
+                    elif result[j] == '(':
+                        count -= 1
+                    if count == 0:
+                        break
+                    j -= 1
+                prev = result[j:]
+                result = result[:j]
+            else:
+                while j >= 0 and result[j].isdigit():
+                    prev = result[j] + prev
+                    j -= 1
+                result = result[:j+1]
+            if expr[i] == '+':
+                result += prev + prev + "*"
+            elif expr[i] == '?':
+                result += "(" + prev + "|_" + ")"
+            i += 1
+        else:
+            result += expr[i]
+            i += 1
+    return result
+
 def find_top_level_hash(expr):
     """
     Busca el operador '#' a nivel superior (fuera de comillas y paréntesis)
@@ -493,32 +534,34 @@ def expand_optionals(expr):
 def combine_expressions(config):
     combined = []
     mapping = {}
-    rule_id = 1
+    rule_id = 0
     for regla in config["reglas"]:
         raw_expr = regla["expresion"].strip()
-        # Si la expresión está entre comillas y contiene un único carácter, extrae el carácter interno.
+        # Si la expresión es un literal de un solo carácter (con o sin comillas)
         if ((raw_expr.startswith("'") and raw_expr.endswith("'")) or 
             (raw_expr.startswith('"') and raw_expr.endswith('"'))) and len(raw_expr[1:-1]) == 1:
             final_expr = ascii_token(raw_expr[1:-1])
-        # Si la cadena es de longitud 1 (sin comillas)
         elif len(raw_expr) == 1:
             final_expr = ascii_token(raw_expr)
         else:
             exp_ids = expand_identificadores(raw_expr, config["definiciones"])
             expanded = expand_rangos(exp_ids)
             limpio = limpiar_parentesis(expanded)
-            final_expr = expand_optionals(limpio)
-        tag = f"#{rule_id}"
-        annotated_expr = f"({final_expr})"
+            final_expr = expand_repetition_operators(expand_optionals(limpio))
+        tag_number = 1000 + rule_id
+        # Aquí se añade un espacio entre la expresión y la etiqueta
+        annotated_expr = f"({final_expr}) {tag_number}"
         combined.append(annotated_expr)
-        mapping[tag] = regla["accion"]
+        mapping[f"#{tag_number}"] = regla["accion"]
         rule_id += 1
-    master_expr = "|".join(combined)
+    # Se unen con " | " para obtener separadores claros
+    master_expr = " | ".join(combined)
     return master_expr, mapping
+
 
 # MAIN
 if __name__ == '__main__':
-    ruta_yal = "slr-4.yal"  # Cambia este nombre por el de tu archivo YAL.
+    ruta_yal = "slr-1.yal"  # Cambia este nombre por el de tu archivo YAL.
     contenido = leer_archivo(ruta_yal)
     config = parse_yal_config(contenido)
 
