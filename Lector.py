@@ -561,7 +561,7 @@ def combine_expressions(config):
 
 # MAIN
 if __name__ == '__main__':
-    ruta_yal = "slr-1.yal"  # Cambia este nombre por el de tu archivo YAL.
+    ruta_yal = "slr-2.yal"  # Cambia este nombre por el de tu archivo YAL.
     contenido = leer_archivo(ruta_yal)
     config = parse_yal_config(contenido)
 
