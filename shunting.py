@@ -32,6 +32,9 @@ def tokenize(expr: str) -> list:
         elif expr[i] in ['(', ')', '|', '.', '*', '+', '?', '#']:
             tokens.append(expr[i])
             i += 1
+        elif expr[i] == '_':  # Tratamos '_' como epsilon
+            tokens.append('949')  # Epsilon representado por su valor ASCII
+            i += 1
         elif expr[i].isspace():
             i += 1  # Ignora espacios
         else:
@@ -51,8 +54,8 @@ def insert_concatenation(expr: str) -> str:
             curr = tokens[i]
             nxt = tokens[i + 1]
             # Condiciones para insertar concatenación
-            if (curr.isdigit() or curr == ')' or curr in ['*', '+', '?']) and \
-               (nxt.isdigit() or nxt == '('):
+            if (curr.isdigit() or curr == ')') and \
+               (nxt.isdigit() or nxt == '(' or nxt == '949'):  # Tratamos '949' como epsilon
                 result.append('.')
     return ''.join(result)
 
@@ -66,7 +69,7 @@ def shunting_yard(master_expr: str) -> str:
     op_stack = []  # Pila para los operadores.
 
     for token in tokens:
-        if token.isdigit():
+        if token.isdigit() or token == '949':  # Acepta '949' como epsilon
             output.append(token)
         elif token == "(":
             op_stack.append(token)
