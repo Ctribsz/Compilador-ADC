@@ -1,60 +1,14 @@
-def expand_rangos(expresion):
-    """
-    Expande los rangos en expresiones que usan corchetes.
-    Por ejemplo, convierte:
-       [0-9]     -> (0|1|2|3|4|5|6|7|8|9)
-       [a-zA-Z]  -> (a|b|...|z|A|B|...|Z)
-    Si se detecta una negación (p.ej. [^a-z]), no se expande y se deja tal cual.
-    """
-    resultado = ""
-    i = 0
-    while i < len(expresion):
-        if expresion[i] == '[':
-            j = expresion.find(']', i)
-            if j == -1:
-                # Si no se encuentra cierre, se agrega el resto literal
-                resultado += expresion[i:]
-                break
-            contenido = expresion[i+1:j]
-            # Si se trata de una negación, lo dejamos sin expandir
-            if contenido.startswith('^'):
-                expanded = '[' + contenido + ']'
-            else:
-                union_parts = []
-                k = 0
-                while k < len(contenido):
-                    # Si se detecta un rango del tipo X-Y
-                    if k+2 < len(contenido) and contenido[k+1] == '-':
-                        start = contenido[k]
-                        end = contenido[k+2]
-                        # Generamos todos los caracteres entre start y end (inclusive)
-                        for c in range(ord(start), ord(end) + 1):
-                            union_parts.append(chr(c))
-                        k += 3
-                    else:
-                        # Si no hay guión, se toma el carácter individual
-                        union_parts.append(contenido[k])
-                        k += 1
-                expanded = "(" + "|".join(union_parts) + ")"
-            resultado += expanded
-            i = j + 1
-        else:
-            resultado += expresion[i]
-            i += 1
-    return resultado
-
-# ------------------------------------------------------
-# Ejemplo de uso: Lectura y expansión de rangos en el archivo YAL
-# ------------------------------------------------------
 def leer_archivo(ruta):
-    """Lee y retorna el contenido completo de un archivo."""
+    """
+    Lee y retorna el contenido completo de un archivo.
+    """
     with open(ruta, 'r', encoding='utf-8') as f:
-        return f.read()
+        contenido = f.read()
+    return contenido
 
 def remove_comments(texto):
     """
-    Elimina comentarios delimitados por (* y *).
-    Se recorre el texto carácter a carácter.
+    Elimina comentarios delimitados por (* y *) recorriendo el texto carácter a carácter.
     """
     resultado = ""
     i = 0
@@ -65,95 +19,365 @@ def remove_comments(texto):
                 if texto[i] == '*' and i + 1 < len(texto) and texto[i + 1] == ')':
                     i += 2
                     break
-                else:
-                    i += 1
+                i += 1
         else:
             resultado += texto[i]
             i += 1
     return resultado
 
-def parse_definiciones(lineas):
+def skip_whitespace(line, i):
     """
-    Extrae las definiciones (let <nombre> = <expresión>) del archivo YAL.
-    Retorna un diccionario {nombre: expresión}.
+    Avanza el índice 'i' mientras haya espacios, tabs o saltos de línea.
+    Retorna el nuevo índice.
+    """
+    while i < len(line) and line[i] in [' ', '\t', '\n', '\r']:
+        i += 1
+    return i
+
+def parse_definiciones_char_by_char(lines):
+    """
+    Busca líneas que empiecen con 'let' y extrae:
+       let <ident> = <expresión>
+    sin usar split, de manera carácter a carácter.
+    Retorna un diccionario {ident: expresion}.
     """
     definiciones = {}
-    for linea in lineas:
-        linea = linea.strip()
-        if linea.startswith("let"):
-            sin_let = linea[3:].strip()
-            if "=" in sin_let:
-                partes = sin_let.split("=", 1)
-                nombre = partes[0].strip()
-                expresion = partes[1].strip()
-                definiciones[nombre] = expresion
+
+    for line in lines:
+        i = 0
+        # Saltar espacios en blanco iniciales
+        i = skip_whitespace(line, i)
+        if i >= len(line):
+            continue
+
+        # Verificar si empieza con "let"
+        # (sin usar line.startswith('let'), lo hacemos manual)
+        if i + 3 <= len(line) and line[i:i+3] == "let":
+            i += 3
+            # Saltar espacios
+            i = skip_whitespace(line, i)
+
+            # 1) Leer identificador hasta espacio, '=' o fin de línea
+            inicio_ident = i
+            while i < len(line):
+                c = line[i]
+                if c.isspace() or c == '=':
+                    break
+                i += 1
+            nombre = line[inicio_ident:i]
+
+            # Saltar espacios
+            i = skip_whitespace(line, i)
+
+            # 2) Esperar un '='
+            if i < len(line) and line[i] == '=':
+                i += 1  # saltar '='
+            # Saltar espacios
+            i = skip_whitespace(line, i)
+
+            # 3) El resto de la línea es la expresión
+            expresion = ""
+            while i < len(line):
+                expresion += line[i]
+                i += 1
+
+            # Guardar en el diccionario
+            definiciones[nombre] = expresion
+
     return definiciones
 
-def parse_reglas(lineas):
+def parse_reglas_char_by_char(lines):
     """
-    Extrae la sección de reglas del archivo YAL.
-    Retorna una lista de reglas (cada regla es un diccionario con 'expresion' y 'accion').
+    Busca la línea que empieza con 'rule' y a partir de ahí
+    interpreta cada línea como una regla:
+        regexp { action }
+    o bien:
+        regexp
+    También maneja líneas que empiezan con '|'.
+    Retorna una lista de reglas (dict con 'expresion' y 'accion').
     """
     reglas = []
     modo_reglas = False
-    for linea in lineas:
-        linea_limpia = linea.strip()
+
+    for line in lines:
+        i = 0
+        i = skip_whitespace(line, i)
+        if i >= len(line):
+            continue
+
+        # Verificar si la línea empieza con "rule"
         if not modo_reglas:
-            if linea_limpia.startswith("rule"):
+            # Sin usar startswith:
+            if line[i:i+4] == "rule":
                 modo_reglas = True
             continue
-        if linea_limpia == "":
+
+        # Ya estamos en modo reglas
+        # 1) Saltar '|' si aparece
+        if line[i] == '|':
+            i += 1
+            i = skip_whitespace(line, i)
+
+        # Si tras saltar espacios no queda nada, seguimos
+        if i >= len(line):
             continue
-        if linea_limpia.startswith("|"):
-            linea_limpia = linea_limpia[1:].strip()
-        if "{" in linea_limpia:
-            partes = linea_limpia.split("{", 1)
-            expresion = partes[0].strip()
-            accion_con_brace = partes[1]
-            if "}" in accion_con_brace:
-                accion = accion_con_brace.split("}", 1)[0].strip()
-            else:
-                accion = accion_con_brace.strip()
+
+        # 2) Extraer la parte de expresión hasta '{' (o fin de línea)
+        expresion = ""
+        accion = None
+        brace_index = -1
+
+        # Buscamos manualmente '{'
+        j = i
+        while j < len(line):
+            if line[j] == '{':
+                brace_index = j
+                break
+            j += 1
+
+        if brace_index == -1:
+            # No se encontró '{', así que todo es expresión
+            expresion = line[i:].rstrip('\n')
         else:
-            expresion = linea_limpia
-            accion = None
+            # Expresión es lo que hay antes de '{'
+            expresion = line[i:brace_index]
+            # Extraemos la acción dentro de '{...}'
+            # y lo que quede después, lo ignoramos
+            # (carácter a carácter, sin split)
+            j = brace_index + 1
+            accion_temp = ""
+            llaves_cerradas = False
+            while j < len(line):
+                if line[j] == '}':
+                    llaves_cerradas = True
+                    break
+                accion_temp += line[j]
+                j += 1
+            # Convertimos la acción en un string final (sin la '}')
+            if llaves_cerradas:
+                accion = accion_temp.strip()
+
         reglas.append({
-            "expresion": expresion,
+            "expresion": expresion.strip(),
             "accion": accion
         })
+
     return reglas
 
 def parse_yal_config(texto):
     """
-    Procesa el archivo YAL: elimina comentarios, separa en líneas, y extrae definiciones y reglas.
-    Retorna un diccionario con las definiciones y una lista de reglas.
+    Procesa el archivo YAL (sin usar split ni re):
+      1) Elimina comentarios
+      2) Separa en líneas
+      3) Extrae definiciones con parse_definiciones_char_by_char
+      4) Extrae reglas con parse_reglas_char_by_char
     """
     texto_sin_comentarios = remove_comments(texto)
-    lineas = texto_sin_comentarios.splitlines()
-    definiciones = parse_definiciones(lineas)
-    reglas = parse_reglas(lineas)
+
+    # Convertir a lista de líneas manualmente (carácter a carácter)
+    # Python normal usaría .splitlines(), pero aquí te muestro cómo
+    # hacerlo sin 'split'. Sin embargo, es bastante estándar permitir .splitlines().
+    lines = []
+    current_line = ""
+    for ch in texto_sin_comentarios:
+        if ch == '\n':
+            lines.append(current_line)
+            current_line = ""
+        else:
+            current_line += ch
+    # Agregar la última línea si existe
+    if current_line:
+        lines.append(current_line)
+
+    definiciones = parse_definiciones_char_by_char(lines)
+    reglas = parse_reglas_char_by_char(lines)
     return {
         "definiciones": definiciones,
         "reglas": reglas
     }
 
-# Ejemplo de uso:
+# ----------------------------------------------------------------
+# Expansión de rangos, identificadores y limpieza de paréntesis
+# (igual que antes, sin usar re ni split)
+# ----------------------------------------------------------------
+
+def expand_rangos(expresion):
+    """
+    Expande los rangos en expresiones que usan corchetes, carácter a carácter.
+    """
+    resultado = ""
+    i = 0
+    while i < len(expresion):
+        if expresion[i] == '[':
+            j = expresion.find(']', i)
+            if j == -1:
+                # No se encuentra el cierre, se agrega lo restante de forma literal.
+                resultado += expresion[i:]
+                break
+            contenido = expresion[i+1:j]
+            if contenido.startswith('^'):
+                # Negación, no se expande
+                expanded = '[' + contenido + ']'
+            else:
+                tokens = []
+                k = 0
+                while k < len(contenido):
+                    if contenido[k] in ["'", '"']:
+                        # Literal con comillas
+                        quote_char = contenido[k]
+                        k += 1
+                        literal = ""
+                        while k < len(contenido) and contenido[k] != quote_char:
+                            if contenido[k] == '\\' and (k+1 < len(contenido)):
+                                seq = contenido[k:k+2]
+                                if seq == '\\t':
+                                    literal += '\t'
+                                elif seq == '\\n':
+                                    literal += '\n'
+                                else:
+                                    literal += contenido[k+1]
+                                k += 2
+                            else:
+                                literal += contenido[k]
+                                k += 1
+                        if k < len(contenido) and contenido[k] == quote_char:
+                            k += 1
+                        # Ver si hay rango 'A'-'Z'
+                        if k < len(contenido) and contenido[k] == '-' and (k+1 < len(contenido)) and contenido[k+1] in ["'", '"']:
+                            k += 1
+                            next_quote = contenido[k]
+                            k += 1
+                            literal2 = ""
+                            while k < len(contenido) and contenido[k] != next_quote:
+                                if contenido[k] == '\\' and (k+1 < len(contenido)):
+                                    seq = contenido[k:k+2]
+                                    if seq == '\\t':
+                                        literal2 += '\t'
+                                    elif seq == '\\n':
+                                        literal2 += '\n'
+                                    else:
+                                        literal2 += contenido[k+1]
+                                    k += 2
+                                else:
+                                    literal2 += contenido[k]
+                                    k += 1
+                            if k < len(contenido) and contenido[k] == next_quote:
+                                k += 1
+                            # Expandir si son un solo caracter
+                            if len(literal) == 1 and len(literal2) == 1:
+                                for c in range(ord(literal), ord(literal2) + 1):
+                                    tokens.append(chr(c))
+                            else:
+                                tokens.append(literal)
+                                tokens.append('-')
+                                tokens.append(literal2)
+                        else:
+                            tokens.append(literal)
+                    elif contenido[k].isspace():
+                        k += 1
+                    elif (k+2 < len(contenido) and contenido[k+1] == '-' and contenido[k] not in ["'", '"']):
+                        # Rango tipo 0-9
+                        start = contenido[k]
+                        end = contenido[k+2]
+                        for c in range(ord(start), ord(end) + 1):
+                            tokens.append(chr(c))
+                        k += 3
+                    else:
+                        tokens.append(contenido[k])
+                        k += 1
+                # Si todo era un literal, no lo expandimos, etc.
+                # Convertir tokens en unión
+                escaped_tokens = [tok.encode('unicode_escape').decode('utf-8') for tok in tokens]
+                expanded = "(" + "|".join(escaped_tokens) + ")"
+            resultado += expanded
+            i = j + 1
+        else:
+            resultado += expresion[i]
+            i += 1
+    return resultado
+
+def expand_identificadores(expresion, definiciones):
+    """
+    Reemplaza recursivamente los identificadores (definidos con let)
+    por sus expresiones correspondientes, carácter a carácter.
+    """
+    resultado = ""
+    i = 0
+    while i < len(expresion):
+        ch = expresion[i]
+        if ch in ["'", '"']:
+            # Copiar literal hasta la comilla de cierre
+            quote_char = ch
+            resultado += ch
+            i += 1
+            while i < len(expresion):
+                resultado += expresion[i]
+                if expresion[i] == quote_char:
+                    i += 1
+                    break
+                i += 1
+        elif ch.isalpha() or ch == '_':
+            # Leer identificador
+            inicio = i
+            while i < len(expresion) and (expresion[i].isalnum() or expresion[i] == '_'):
+                i += 1
+            token = expresion[inicio:i]
+            if token in definiciones:
+                subexp = expand_identificadores(definiciones[token], definiciones)
+                resultado += "(" + subexp + ")"
+            else:
+                resultado += token
+        else:
+            resultado += ch
+            i += 1
+    return resultado
+
+def limpiar_parentesis(expresion):
+    """
+    Elimina paréntesis externos redundantes que envuelven toda la expresión,
+    sin usar split ni re.
+    """
+    while expresion.startswith("(") and expresion.endswith(")"):
+        count = 0
+        redundant = True
+        for i, char in enumerate(expresion):
+            if char == '(':
+                count += 1
+            elif char == ')':
+                count -= 1
+            if count == 0 and i < len(expresion) - 1:
+                redundant = False
+                break
+        if redundant:
+            expresion = expresion[1:-1]
+        else:
+            break
+    return expresion
+
+# ------------------------------------------------------
+# MAIN de ejemplo
+# ------------------------------------------------------
 if __name__ == '__main__':
-    ruta_yal = "config.yal"  # Actualiza con la ruta a tu archivo YAL
-    contenido_yal = leer_archivo(ruta_yal)
-    
-    config = parse_yal_config(contenido_yal)
-    
+    ruta_yal = "slr-4.yal"  # Ajusta con tu archivo
+    contenido = leer_archivo(ruta_yal)
+    config = parse_yal_config(contenido)
+
     print("Definiciones encontradas:")
     for nombre, expresion in config["definiciones"].items():
-        print(f"  {nombre} = {expresion}")
-        expanded = expand_rangos(expresion)
-        print(f"    Expandidas: {expanded}")
-    
-    print("\nReglas encontradas:")
+        print(f"{nombre} = {expresion}")
+        exp_ids = expand_identificadores(expresion, config["definiciones"])
+        expanded = expand_rangos(exp_ids)
+        limpio = limpiar_parentesis(expanded)
+        print(f"  Expandidas: {expanded}")
+        print(f"  Limpio: {limpio}\n")
+
+    print("Reglas encontradas:")
     for regla in config["reglas"]:
-        print(f"  Expresión: {regla['expresion']}")
+        print(f"Expresión: {regla['expresion']}")
         print(f"  Acción: {regla['accion']}")
-        expanded = expand_rangos(regla["expresion"])
-        print(f"    Expandidas: {expanded}")
+        exp_ids = expand_identificadores(regla["expresion"], config["definiciones"])
+        expanded = expand_rangos(exp_ids)
+        limpio = limpiar_parentesis(expanded)
+        print(f"  Expandidas: {expanded}")
+        print(f"  Limpio: {limpio}")
         print("-" * 40)
