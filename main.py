@@ -6,11 +6,12 @@ from afd_directo import (
     generate_ast_graph,
     compute_followpos,
     generate_afd,
-    minimize_afd
+    minimize_afd,
+    st_m
 )
 
 def main():
-    ruta = "config.yal"
+    ruta = "slr-2.yal"
     contenido = leer_archivo(ruta)
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)
@@ -26,13 +27,14 @@ def main():
 
     # Intentamos construir el árbol. Si falla, aplicamos limpieza.
     try:
-        root, positions = build_syntax_tree(postfix_expr.split())
+        root, positions = build_syntax_tree(st_m(postfix_expr))
     except ValueError as e:
         print("\n⚠️ Error al construir el árbol, aplicando limpieza de postfix...")
         postfix_expr = limpiar_postfix(postfix_expr)
         print("Postfix corregida:")
         print(postfix_expr)
-        root, positions = build_syntax_tree(postfix_expr.split())
+        tokens = (st_m(postfix_expr))
+        root, positions = build_syntax_tree(tokens)
 
     print("\nResultado en notación Postfix (con #):")
     print(postfix_expr)

@@ -1,14 +1,38 @@
+
 precedence = {
-    "#": 4,  # Diferencia de conjuntos (si aplica)
-    "*": 3,  # Cerradura
-    "+": 3,  # Cerradura positiva
-    "?": 3,  # Opcional
-    ".": 2,  # Concatenación
-    "|": 1   # Unión
+    "#": 4,
+    "*": 3,
+    "+": 3,
+    "?": 3,
+    ".": 2,
+    "|": 1
 }
 
 def is_operator(token: str) -> bool:
     return token in precedence
+
+def sp_manual(texto):
+    inicio = 0
+    while inicio < len(texto) and texto[inicio] in [' ', '\t', '\n', '\r']:
+        inicio += 1
+    fin = len(texto) - 1
+    while fin >= 0 and texto[fin] in [' ', '\t', '\n', '\r']:
+        fin -= 1
+    return texto[inicio:fin+1] if inicio <= fin else ''
+
+def st_manual(texto):
+    partes = []
+    actual = ""
+    for ch in texto:
+        if ch == ' ':
+            if actual:
+                partes.append(actual)
+                actual = ""
+        else:
+            actual += ch
+    if actual:
+        partes.append(actual)
+    return partes
 
 def tokenize(expr: str) -> list:
     tokens = []
@@ -49,8 +73,6 @@ def insert_concatenation(expr: str) -> str:
         if i + 1 < len(tokens):
             curr = tokens[i]
             nxt = tokens[i + 1]
-
-            # Condiciones para insertar '.'
             if (
                 (curr not in {'|', '.', '(',} and not curr.startswith('#')) and
                 (nxt not in {'|', '.', ')', '*', '+', '?'} and not nxt.startswith('#'))
@@ -61,7 +83,7 @@ def insert_concatenation(expr: str) -> str:
 
 def shunting_yard(master_expr: str) -> str:
     expr_with_concat = insert_concatenation(master_expr)
-    tokens = expr_with_concat.split()
+    tokens = st_manual(expr_with_concat)
 
     output = []
     stack = []
@@ -90,25 +112,23 @@ def shunting_yard(master_expr: str) -> str:
     return ' '.join(output)
 
 def limpiar_postfix(postfix_expr: str) -> str:
-    tokens = postfix_expr.strip().split()
+    tokens = st_manual(sp_manual(postfix_expr))
     cleaned = []
     stack_depth = 0
 
     for token in tokens:
         if token in {'.', '|'}:
             if stack_depth < 2:
-                continue  # operador binario sin suficientes operandos
-            stack_depth -= 1  # combina dos en uno
+                continue
+            stack_depth -= 1
         elif token in {'*', '+', '?'}:
             if stack_depth < 1:
-                continue  # operador unario sin operando
-            # stack_depth no cambia
+                continue
         else:
-            stack_depth += 1  # nuevo operando válido
+            stack_depth += 1
 
         cleaned.append(token)
 
-    # Solo devolver si la expresión termina con un stack válido
     if stack_depth == 1:
         return ' '.join(cleaned)
     else:

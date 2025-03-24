@@ -95,7 +95,7 @@ def build_syntax_tree(postfix):
     pos = 1
 
     for token in postfix:
-        token = token.strip()
+        token = sp_manual(token)
         if not token:
             continue
 
@@ -216,6 +216,31 @@ def compute_followpos(root, positions):
             compute(node.right)
     compute(root)
     return followpos
+
+def st_m(texto):
+    partes = []
+    actual = ""
+    for ch in texto:
+        if ch == ' ':
+            if actual:
+                partes.append(actual)
+                actual = ""
+        else:
+            actual += ch
+    if actual:
+        partes.append(actual)
+    return partes
+
+def sp_manual(texto):
+    inicio = 0
+    while inicio < len(texto) and texto[inicio] in [' ', '\t', '\n', '\r']:
+        inicio += 1
+
+    fin = len(texto) - 1
+    while fin >= 0 and texto[fin] in [' ', '\t', '\n', '\r']:
+        fin -= 1
+
+    return texto[inicio:fin+1] if inicio <= fin else ''
 
 def generate_afd(root, positions, followpos):
     import graphviz

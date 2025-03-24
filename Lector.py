@@ -1,3 +1,32 @@
+def sp_manual(texto):
+    inicio = 0
+    while inicio < len(texto) and texto[inicio] in [' ', '\t', '\n', '\r']:
+        inicio += 1
+
+    fin = len(texto) - 1
+    while fin >= 0 and texto[fin] in [' ', '\t', '\n', '\r']:
+        fin -= 1
+
+    return texto[inicio:fin+1] if inicio <= fin else ''
+
+def sp_rstrip(texto, char='\n'):
+    fin = len(texto)
+    while fin > 0 and texto[fin-1] == char:
+        fin -= 1
+    return texto[:fin]
+
+def sp_strip_chars(texto, chars=" ()"):
+    inicio = 0
+    while inicio < len(texto) and texto[inicio] in chars:
+        inicio += 1
+
+    fin = len(texto) - 1
+    while fin >= 0 and texto[fin] in chars:
+        fin -= 1
+
+    return texto[inicio:fin+1] if inicio <= fin else ''
+# ====================================
+
 def obtener_alfabeto():
     """Retorna el conjunto de caracteres ASCII imprimibles (del 32 al 126)."""
     return set(chr(i) for i in range(32, 127))
@@ -104,7 +133,7 @@ def parse_reglas_char_by_char(lines):
                 break
             j += 1
         if brace_index == -1:
-            expresion = line[i:].rstrip('\n')
+            expresion = sp_rstrip(line[i:], '\n')
         else:
             expresion = line[i:brace_index]
             j = brace_index + 1
@@ -117,8 +146,8 @@ def parse_reglas_char_by_char(lines):
                 accion_temp += line[j]
                 j += 1
             if llave_cerrada:
-                accion = accion_temp.strip()
-        reglas.append({"expresion": expresion.strip(), "accion": accion})
+                accion = sp_manual(accion_temp)
+        reglas.append({"expresion": sp_manual(expresion), "accion": accion})
     return reglas
 
 def parse_yal_config(texto):
@@ -152,12 +181,12 @@ def manual_split(expr, delimiter):
     current = ""
     for ch in expr:
         if ch == delimiter:
-            parts.append(current.strip())
+            parts.append(sp_manual(current))
             current = ""
         else:
             current += ch
     if current:
-        parts.append(current.strip())
+        parts.append(sp_manual(current))
     return parts
 
 
@@ -327,7 +356,7 @@ def expand_rangos(expresion):
     """
     if expresion == "_":
         ALPHABET = obtener_alfabeto()
-        union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok.strip())
+        union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok)
         return "(" + union + ")"
     
     expresion = limpiar_parentesis(expresion)
@@ -339,10 +368,10 @@ def expand_rangos(expresion):
         right_expanded = expand_rangos(right_expr)
         left_clean = limpiar_parentesis(left_expanded)
         right_clean = limpiar_parentesis(right_expanded)
-        left_parts = [p.strip(" ()") for p in manual_split(left_clean, '|')]
-        right_parts = [p.strip(" ()") for p in manual_split(right_clean, '|')]
+        left_parts = [sp_strip_chars(p, " ()") for p in manual_split(left_clean, '|')]
+        right_parts = [sp_strip_chars(p, " ()") for p in manual_split(right_clean, '|')]
         diff_set = sorted(set(left_parts) - set(right_parts))
-        return "(" + "|".join(tok for tok in (ascii_token(tok) for tok in diff_set) if tok.strip()) + ")"
+        return "(" + "|".join(tok for tok in (ascii_token(tok) for tok in diff_set) if tok) + ")"
     
     resultado = ""
     i = 0
@@ -436,7 +465,7 @@ def expand_rangos(expresion):
                         tokens.append(contenido[k])
                         k += 1
                 ascii_tokens = [ascii_token(tok) for tok in tokens]
-                ascii_tokens = [tok for tok in ascii_tokens if tok.strip() and tok != '|']
+                ascii_tokens = [tok for tok in ascii_tokens if tok and tok != '|']
 
                 # REVISIÓN CLAVE AQUÍ:
                 if not ascii_tokens:
@@ -469,7 +498,7 @@ def expand_rangos(expresion):
                         literal += expresion[i]
                         i += 1
                 i += 1  # Saltar comilla final
-                resultado += "(" + "|".join(tok for tok in (ascii_token(c) for c in literal) if tok.strip()) + ")"
+                resultado += "(" + "|".join(tok for tok in (ascii_token(c) for c in literal) if tok) + ")"
             else:
                 resultado += expresion[i]
                 i += 1
@@ -506,7 +535,7 @@ def expand_identificadores(expresion, definiciones):
             else:
                 if token == "_":
                     ALPHABET = obtener_alfabeto()
-                    union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok.strip())
+                    union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok)
                     resultado += "(" + union + ")"
                 else:
                     resultado += token
@@ -599,7 +628,7 @@ def combine_expressions(config):
     rule_id = 0
 
     for regla in config["reglas"]:
-        raw_expr = regla["expresion"].strip()
+        raw_expr = regla["expresion"]
 
         # Convertimos caracteres literales a ASCII
         if ((raw_expr.startswith("'") and raw_expr.endswith("'")) or 
@@ -614,7 +643,7 @@ def combine_expressions(config):
             final_expr = expand_repetition_operators(expand_optionals(limpio))
 
         # Caso especial: si la expresión está vacía o es solo épsilon
-        if not final_expr.strip() or final_expr.strip() in ['|', '.', '()', '', '949']:
+        if not final_expr or final_expr in ['|', '.', '()', '', '949']:
             final_expr = '949'
 
         # Agrega puntos de concatenación explícitos
@@ -630,7 +659,7 @@ def combine_expressions(config):
         rule_id += 1
 
     # Unimos todas las expresiones usando unión
-    master_expr = " | ".join(expr for expr in combined if expr.strip())
+    master_expr = " | ".join(expr for expr in combined if sp_manual(expr))
     master_expr = limpiar_expresion(master_expr)
 
     return master_expr, mapping
@@ -656,7 +685,7 @@ if __name__ == '__main__':
     for regla in config["reglas"]:
         print(f"Expresión: {regla['expresion']}")
         print(f"  Acción: {regla['accion']}")
-        raw_expr = regla["expresion"].strip()
+        raw_expr = regla["expresion"]
         
         # Si la expresión está entre comillas y tiene un solo carácter, extrae ese carácter
         if ((raw_expr.startswith("'") and raw_expr.endswith("'")) or 
