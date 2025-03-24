@@ -29,23 +29,64 @@ def insert_concatenation_operators(infix):
 
 def to_postfix(infix):
     precedence = {'|': 1, '.': 2, '*': 3}
-    output, stack = [], []
-    infix = insert_concatenation_operators(infix)
-    for c in infix:
-        if is_operand(c) or c == '#':
+    output = []
+    stack = []
+
+    # Tokenización manual con soporte para números y tags como #1000
+    i = 0
+    while i < len(infix):
+        c = infix[i]
+
+        # Tokens tipo #1000
+        if c == '#' and i + 1 < len(infix):
+            j = i + 1
+            while j < len(infix) and infix[j].isdigit():
+                j += 1
+            output.append(infix[i:j])
+            i = j
+            continue
+
+        # Números de más de un dígito
+        elif c.isdigit():
+            j = i
+            while j < len(infix) and infix[j].isdigit():
+                j += 1
+            output.append(infix[i:j])
+            i = j
+            continue
+
+        elif c.isalpha():
             output.append(c)
+            i += 1
+            continue
+
         elif c == '(':
             stack.append(c)
+            i += 1
+            continue
+
         elif c == ')':
             while stack and stack[-1] != '(':
                 output.append(stack.pop())
-            stack.pop()
-        else:
+            if stack and stack[-1] == '(':
+                stack.pop()
+            i += 1
+            continue
+
+        elif c in precedence:
             while stack and stack[-1] != '(' and precedence.get(stack[-1], 0) >= precedence[c]:
                 output.append(stack.pop())
             stack.append(c)
+            i += 1
+            continue
+
+        else:
+            # Saltar espacios u otros caracteres no relevantes
+            i += 1
+
     while stack:
         output.append(stack.pop())
+
     return output
 
 def build_syntax_tree(postfix):
@@ -54,9 +95,11 @@ def build_syntax_tree(postfix):
     pos = 1
 
     for token in postfix:
-        if token == '_':
-            continue  # Epsilon no se convierte en nodo
+        token = token.strip()
+        if not token:
+            continue
 
+        # Si el token es un número (ASCII)
         if token.isdigit():
             node = Node(token)
             node.position = pos
@@ -65,55 +108,80 @@ def build_syntax_tree(postfix):
             positions[pos] = node
             stack.append(node)
             pos += 1
+            continue
 
-        elif token == '*':
-            if not stack:
-                raise ValueError("Error: '*' requiere un operando.")
-            child = stack.pop()
-            node = Node(token, child)
-            node.nullable = True
-            node.firstpos = child.firstpos
-            node.lastpos = child.lastpos
+        # 🔧 FIX: Si el token es #1000, #1001, etc. → también es hoja con posición
+        if token.startswith('#') and token[1:].isdigit():
+            node = Node(token)
+            node.position = pos
+            node.firstpos = node.lastpos = {pos}
+            node.nullable = False
+            positions[pos] = node
             stack.append(node)
+            pos += 1
+            continue
 
-        elif token in {'|', '.'}:
+        # Si es épsilon explícito
+        if token == '949':
+            node = Node(token)
+            node.nullable = True
+            node.firstpos = node.lastpos = set()
+            stack.append(node)
+            continue
+
+        # Operadores unarios
+        if token in {'*', '?', '+'}:
+            if not stack:
+                raise ValueError(f"Error: '{token}' requiere un operando.")
+            child = stack.pop()
+
+            if token == '*':
+                node = Node('*', child)
+                node.nullable = True
+                node.firstpos = child.firstpos
+                node.lastpos = child.lastpos
+
+            elif token == '?':
+                node = Node('|', child, Node('949'))  # A | ε
+                node.nullable = True
+                node.firstpos = child.firstpos | set()
+                node.lastpos = child.lastpos | set()
+
+            elif token == '+':
+                node_star = Node('*', child)
+                node = Node('.', child, node_star)
+                node.nullable = child.nullable
+                node.firstpos = child.firstpos
+                node.lastpos = node_star.lastpos
+
+            stack.append(node)
+            continue
+
+        # Operadores binarios
+        if token in {'|', '.'}:
             if len(stack) < 2:
+                print("Estado de la pila antes del error:", stack)
                 raise ValueError(f"Error: operador '{token}' requiere dos operandos.")
             right = stack.pop()
             left = stack.pop()
             node = Node(token, left, right)
+
             if token == '|':
                 node.nullable = left.nullable or right.nullable
                 node.firstpos = left.firstpos | right.firstpos
                 node.lastpos = left.lastpos | right.lastpos
-            else:  # '.'
+            else:  # Concatenación
                 node.nullable = left.nullable and right.nullable
-                node.firstpos = (left.firstpos | right.firstpos) if left.nullable else left.firstpos
-                node.lastpos = (left.lastpos | right.lastpos) if right.nullable else right.lastpos
-            stack.append(node)
+                node.firstpos = left.firstpos if not left.nullable else left.firstpos | right.firstpos
+                node.lastpos = right.lastpos if not right.nullable else left.lastpos | right.lastpos
 
-        elif token == '?':
-            if not stack:
-                raise ValueError("Error: '?' requiere un operando.")
-            child = stack.pop()
-            node = Node('|', child, Node('_'))  # A | ε
-            node.nullable = True
-            node.firstpos = child.firstpos
-            node.lastpos = child.lastpos
             stack.append(node)
+            continue
 
-        elif token == '+':
-            if not stack:
-                raise ValueError("Error: '+' requiere un operando.")
-            child = stack.pop()
-            node_star = Node('*', child)
-            node = Node('.', child, node_star)
-            node.nullable = child.nullable
-            node.firstpos = child.firstpos
-            node.lastpos = child.lastpos
-            stack.append(node)
+        raise ValueError(f"Token desconocido: '{token}'")
 
     if len(stack) != 1:
+        print("Estado final de la pila (debería tener solo un nodo):", stack)
         raise ValueError("Error: expresión inválida, árbol no puede construirse.")
 
     return stack[0], positions
@@ -165,7 +233,7 @@ def generate_afd(root, positions, followpos):
     afd.edge('', 'A', label='')
 
     # Encontrar posiciones de aceptación (tokens >= 1000)
-    final_positions = [pos for pos, node in positions.items() if node.value.isdigit() and int(node.value) >= 1000]
+    final_positions = {pos for pos, node in positions.items() if node.value.startswith('#')}
 
     while unmarked:
         state = unmarked.pop(0)
