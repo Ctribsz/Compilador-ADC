@@ -302,30 +302,46 @@ def generate_afd(root, positions, followpos):
 def minimize_afd(afd_dict):
     accepted = set(afd_dict['accepted'])
     groups, min_trans, min_accepted, state_map = {}, {}, set(), {}
+    
     for state, trans in afd_dict['transitions'].items():
         key = (frozenset(trans.items()), state in accepted)
         groups.setdefault(key, []).append(state)
+    
     for i, group in enumerate(groups.values()):
         name = f"M{i}"
         state_map[frozenset(group)] = name
+    
     min_afd = graphviz.Digraph('MinAFD')
     min_afd.attr(rankdir='LR')
     min_afd.node("", shape="none")
+    
     initial_group = next(g for g in state_map if afd_dict['initial'] in g)
     min_afd.edge("", state_map[initial_group], label="")
+
+    afd_dict_min = {
+        'transitions': {},
+        'accepted': [],
+        'initial': state_map[initial_group],
+        'states': {}
+    }
+
     for group, rep in state_map.items():
         if any(s in accepted for s in group):
-            min_accepted.add(rep)
+            afd_dict_min['accepted'].append(rep)
+        afd_dict_min['states'][group] = rep
         min_trans[rep] = {}
         original = next(iter(group))
         for sym, dest in afd_dict['transitions'][original].items():
             for g, gname in state_map.items():
                 if dest in g:
                     min_trans[rep][sym] = gname
+                    afd_dict_min['transitions'].setdefault(rep, {})[sym] = gname
                     break
+
     for state, trans in min_trans.items():
-        shape = 'doublecircle' if state in min_accepted else 'circle'
+        shape = 'doublecircle' if state in afd_dict_min['accepted'] else 'circle'
         min_afd.node(state, shape=shape)
         for sym, dest in trans.items():
             min_afd.edge(state, dest, sym)
-    return min_afd
+
+    return min_afd, afd_dict_min
