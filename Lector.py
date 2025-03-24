@@ -164,16 +164,18 @@ def manual_split(expr, delimiter):
 def expand_repetition_operators(expr: str) -> str:
     """
     Reemplaza:
-    - A+ por AA*
+    - A+ por (A)(A)*
     - A? por (A|_)
     """
     i = 0
     result = ""
     while i < len(expr):
         if expr[i] in ['+', '?'] and i > 0:
+            # Extraer el operando que antecede al operador de repetición.
             prev = ""
             j = len(result) - 1
             if result[j] == ')':
+                # Si termina en ')', buscar la pareja de paréntesis de apertura
                 count = 1
                 j -= 1
                 while j >= 0:
@@ -187,19 +189,21 @@ def expand_repetition_operators(expr: str) -> str:
                 prev = result[j:]
                 result = result[:j]
             else:
-                while j >= 0 and result[j].isdigit():
-                    prev = result[j] + prev
-                    j -= 1
-                result = result[:j+1]
+                # Si no está entre paréntesis, se asume que el operando es de longitud 1.
+                prev = result[-1]
+                result = result[:-1]
             if expr[i] == '+':
-                result += prev + prev + "*"
+                # Agrupar A y luego concatenar con (A)*
+                result += "(" + prev + ")(" + prev + ")*"
             elif expr[i] == '?':
-                result += "(" + prev + "|_" + ")"
+                # Agrupar A en la unión con épsilon
+                result += "(" + prev + "|949)"
             i += 1
         else:
             result += expr[i]
             i += 1
     return result
+
 
 def find_top_level_hash(expr):
     """
@@ -323,7 +327,7 @@ def expand_rangos(expresion):
     """
     if expresion == "_":
         ALPHABET = obtener_alfabeto()
-        union = "|".join(sorted(ascii_token(x) for x in ALPHABET))
+        union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok.strip())
         return "(" + union + ")"
     
     expresion = limpiar_parentesis(expresion)
@@ -338,7 +342,7 @@ def expand_rangos(expresion):
         left_parts = [p.strip(" ()") for p in manual_split(left_clean, '|')]
         right_parts = [p.strip(" ()") for p in manual_split(right_clean, '|')]
         diff_set = sorted(set(left_parts) - set(right_parts))
-        return "(" + "|".join(ascii_token(tok) for tok in diff_set) + ")"
+        return "(" + "|".join(tok for tok in (ascii_token(tok) for tok in diff_set) if tok.strip()) + ")"
     
     resultado = ""
     i = 0
@@ -432,7 +436,15 @@ def expand_rangos(expresion):
                         tokens.append(contenido[k])
                         k += 1
                 ascii_tokens = [ascii_token(tok) for tok in tokens]
-                expanded = "(" + "|".join(ascii_tokens) + ")"
+                ascii_tokens = [tok for tok in ascii_tokens if tok.strip() and tok != '|']
+
+                # REVISIÓN CLAVE AQUÍ:
+                if not ascii_tokens:
+                    expanded = '949'  # Épsilon explícito cuando no hay tokens válidos
+                else:
+                    expanded = "(" + "|".join(ascii_tokens) + ")"
+
+
             resultado += expanded
             i = j + 1
         else:
@@ -457,7 +469,7 @@ def expand_rangos(expresion):
                         literal += expresion[i]
                         i += 1
                 i += 1  # Saltar comilla final
-                resultado += "(" + "|".join(ascii_token(c) for c in literal) + ")"
+                resultado += "(" + "|".join(tok for tok in (ascii_token(c) for c in literal) if tok.strip()) + ")"
             else:
                 resultado += expresion[i]
                 i += 1
@@ -494,7 +506,7 @@ def expand_identificadores(expresion, definiciones):
             else:
                 if token == "_":
                     ALPHABET = obtener_alfabeto()
-                    union = "|".join(sorted(ascii_token(x) for x in ALPHABET))
+                    union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok.strip())
                     resultado += "(" + union + ")"
                 else:
                     resultado += token
@@ -531,13 +543,65 @@ def expand_optionals(expr):
     """
     return expr
 
+def limpiar_expresion(expr):
+    """
+    Limpia la expresión eliminando dobles operadores y paréntesis vacíos.
+    Reemplaza:
+      - '||' por '|'
+      - '..' por '.'
+      - '()' por '949'
+    """
+    # Reemplazos repetidos hasta que no se encuentren más patrones
+    anterior = None
+    while anterior != expr:
+        anterior = expr
+        expr = expr.replace("||", "|")
+        expr = expr.replace("..", ".")
+        expr = expr.replace("()", "949")
+    return expr
+
+def insertar_concatenaciones(expr):
+    """
+    Inserta '.' explícitamente donde se requiere concatenación entre tokens,
+    respetando números de más de un dígito como 43 o 949.
+    """
+    resultado = ""
+    i = 0
+    while i < len(expr):
+        actual = expr[i]
+
+        # Leer token actual completo (por ejemplo: un número como 43 o 949)
+        token = ""
+        if actual.isdigit():
+            while i < len(expr) and expr[i].isdigit():
+                token += expr[i]
+                i += 1
+        else:
+            token = actual
+            i += 1
+
+        # Agregar '.' si corresponde con el anterior
+        if resultado:
+            prev = resultado[-1]
+            if (
+                (prev.isdigit() or prev == ')' or prev == '*') and
+                (token[0].isdigit() or token[0] == '(' or token[0] in ['"', "'"])
+            ):
+                resultado += '.'
+
+        resultado += token
+
+    return resultado
+
 def combine_expressions(config):
     combined = []
     mapping = {}
     rule_id = 0
+
     for regla in config["reglas"]:
         raw_expr = regla["expresion"].strip()
-        # Si la expresión es un literal de un solo carácter (con o sin comillas)
+
+        # Convertimos caracteres literales a ASCII
         if ((raw_expr.startswith("'") and raw_expr.endswith("'")) or 
             (raw_expr.startswith('"') and raw_expr.endswith('"'))) and len(raw_expr[1:-1]) == 1:
             final_expr = ascii_token(raw_expr[1:-1])
@@ -548,16 +612,28 @@ def combine_expressions(config):
             expanded = expand_rangos(exp_ids)
             limpio = limpiar_parentesis(expanded)
             final_expr = expand_repetition_operators(expand_optionals(limpio))
+
+        # Caso especial: si la expresión está vacía o es solo épsilon
+        if not final_expr.strip() or final_expr.strip() in ['|', '.', '()', '', '949']:
+            final_expr = '949'
+
+        # Agrega puntos de concatenación explícitos
+        final_expr = insertar_concatenaciones(final_expr)
+
         tag_number = 1000 + rule_id
-        # Aquí se añade un espacio entre la expresión y la etiqueta
-        annotated_expr = f"({final_expr}) {tag_number}"
+
+        # Concatenamos la expresión con su tag como hoja final
+        annotated_expr = f"(({final_expr}).#{tag_number})"
+
         combined.append(annotated_expr)
         mapping[f"#{tag_number}"] = regla["accion"]
         rule_id += 1
-    # Se unen con " | " para obtener separadores claros
-    master_expr = " | ".join(combined)
-    return master_expr, mapping
 
+    # Unimos todas las expresiones usando unión
+    master_expr = " | ".join(expr for expr in combined if expr.strip())
+    master_expr = limpiar_expresion(master_expr)
+
+    return master_expr, mapping
 
 # MAIN
 if __name__ == '__main__':
