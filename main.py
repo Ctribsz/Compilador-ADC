@@ -15,7 +15,7 @@ from afd_directo import (
 )
 
 def main():
-    ruta = "slr-1" 
+    ruta = "slr-2" 
     contenido = leer_archivo(ruta + ".yal")
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)

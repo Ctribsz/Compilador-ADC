@@ -11,18 +11,6 @@ def ascii_de(char):
     return str(ord(char))
 
 def lexer(cadena, afd_dict, mapping, debug=True):
-    """
-    Analiza una cadena y retorna una lista de tokens usando el AFD minimizado y el mapping.
-
-    Parámetros:
-        cadena (str): la cadena a analizar (ej: "x+y")
-        afd_dict (dict): el AFD cargado desde el pickle
-        mapping (dict): diccionario que asocia tags (#1001, etc.) con acciones (ej: return ID)
-        debug (bool): si True, muestra el recorrido por el AFD
-
-    Retorna:
-        list: lista de tuplas (token, lexema)
-    """
     pos = 0
     tokens = []
     while pos < len(cadena):
@@ -37,10 +25,10 @@ def lexer(cadena, afd_dict, mapping, debug=True):
         i = pos
         while i < len(cadena):
             char = cadena[i]
-            ascii_token = ascii_de(char)
-            if estado_actual in transiciones and ascii_token in transiciones[estado_actual]:
-                siguiente = transiciones[estado_actual][ascii_token]
-                recorrido.append((estado_actual, ascii_token, siguiente))
+            ascii_token_char = str(ord(char))
+            if estado_actual in transiciones and ascii_token_char in transiciones[estado_actual]:
+                siguiente = transiciones[estado_actual][ascii_token_char]
+                recorrido.append((estado_actual, ascii_token_char, siguiente))
                 estado_actual = siguiente
                 i += 1
                 if estado_actual in aceptacion:
@@ -53,22 +41,11 @@ def lexer(cadena, afd_dict, mapping, debug=True):
             raise ValueError(f"❌ Error léxico: símbolo inesperado '{cadena[pos]}' en posición {pos}")
 
         lexema = cadena[pos:ultimo_token_pos]
-        token = None
-
-        # Buscar el tag correspondiente al estado final
-        for tag, accion in mapping.items():
-            if accion is not None and tag[1:] == str(ord(lexema[-1])):
-                token = accion
-                break
-
-        # Si no se encuentra por símbolo final, usar el estado directamente
-        if token is None:
-            for tag, accion in mapping.items():
-                if accion and tag[1:] in afd_dict['transitions'].get(ultimo_estado_final, {}):
-                    token = accion
-                    break
-
-        if token is None:
+        # Usamos el tag asignado al estado aceptante para determinar el token
+        if ultimo_estado_final in afd_dict.get('state_tags', {}):
+            tag = afd_dict['state_tags'][ultimo_estado_final]
+            token = mapping.get(tag, 'UNKNOWN')
+        else:
             token = 'UNKNOWN'
 
         tokens.append((token, lexema))

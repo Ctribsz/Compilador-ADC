@@ -257,17 +257,15 @@ def generate_afd(root, positions, followpos):
     afd.node('', shape='none')
     afd.edge('', 'A', label='')
 
-    # Encontrar posiciones de aceptación (tokens >= 1000)
+    # Encontrar posiciones de aceptación (nodos cuyo valor comienza con '#')
     final_positions = {pos for pos, node in positions.items() if node.value.startswith('#')}
 
     while unmarked:
         state = unmarked.pop(0)
         state_name = states[state]
-
-        # Guardar el conjunto de posiciones en el diccionario
         afd_dict['states'][state] = state_name
 
-        # Marcar si el estado es de aceptación
+        # Marcar estado de aceptación
         if any(p in state for p in final_positions):
             afd_dict['accepted'].append(state_name)
 
@@ -275,13 +273,12 @@ def generate_afd(root, positions, followpos):
         for pos in state:
             symbol = positions[pos].value
             if symbol.isdigit() and int(symbol) >= 1000:
-                continue  # no usar marcadores como símbolos
+                continue  # ignorar marcadores
             if symbol not in transiciones:
                 transiciones[symbol] = set()
             transiciones[symbol] |= followpos[pos]
 
         afd_dict['transitions'][state_name] = {}
-
         for symbol, next_positions in transiciones.items():
             if not next_positions:
                 continue
@@ -296,6 +293,19 @@ def generate_afd(root, positions, followpos):
     for state_set, name in states.items():
         shape = 'doublecircle' if name in afd_dict['accepted'] else 'circle'
         afd.node(name, shape=shape)
+
+    # --- NUEVO: Asignar tags a cada estado aceptante ---
+    state_tags = {}
+    for state_set, name in states.items():
+        # Buscamos nodos hoja que sean tags (que empiezan por '#')
+        token_candidates = [int(positions[pos].value[1:]) 
+                            for pos in state_set if positions[pos].value.startswith('#')]
+        if token_candidates:
+            # Seleccionamos el tag con menor valor (mayor prioridad)
+            token_num = min(token_candidates)
+            state_tags[name] = '#' + str(token_num)
+    afd_dict['state_tags'] = state_tags
+    # -------------------------------------------------------
 
     return afd, afd_dict
 
@@ -317,14 +327,17 @@ def minimize_afd(afd_dict):
     
     initial_group = next(g for g in state_map if afd_dict['initial'] in g)
     min_afd.edge("", state_map[initial_group], label="")
-
+    
     afd_dict_min = {
         'transitions': {},
         'accepted': [],
         'initial': state_map[initial_group],
-        'states': {}
+        'states': {},
+        # Nuevo: incorporamos los state_tags minimizados
+        'state_tags': {}
     }
-
+    
+    # Propagar accepted y asignar transiciones mínimas
     for group, rep in state_map.items():
         if any(s in accepted for s in group):
             afd_dict_min['accepted'].append(rep)
@@ -337,11 +350,26 @@ def minimize_afd(afd_dict):
                     min_trans[rep][sym] = gname
                     afd_dict_min['transitions'].setdefault(rep, {})[sym] = gname
                     break
-
+    
+    # Nuevo: Propagar los tags desde los estados originales a los estados minimizados.
+    # Se revisa cada grupo y, si algún estado original tenía tag, se lo asigna al estado minimizado.
+    min_state_tags = {}
+    if 'state_tags' in afd_dict:
+        for group, rep in state_map.items():
+            candidate_tags = []
+            for st in group:
+                if st in afd_dict['state_tags']:
+                    candidate_tags.append(afd_dict['state_tags'][st])
+            if candidate_tags:
+                # Seleccionamos el tag con menor valor numérico (prioridad)
+                candidate_tags.sort(key=lambda tag: int(tag[1:]))
+                min_state_tags[rep] = candidate_tags[0]
+    afd_dict_min['state_tags'] = min_state_tags
+    
     for state, trans in min_trans.items():
         shape = 'doublecircle' if state in afd_dict_min['accepted'] else 'circle'
         min_afd.node(state, shape=shape)
         for sym, dest in trans.items():
             min_afd.edge(state, dest, sym)
-
+    
     return min_afd, afd_dict_min
