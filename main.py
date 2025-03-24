@@ -1,6 +1,6 @@
 import os
 from Lector import leer_archivo, parse_yal_config, combine_expressions
-from shunting import shunting_yard
+from shunting import shunting_yard, limpiar_postfix
 from afd_directo import (
     build_syntax_tree,
     generate_ast_graph,
@@ -10,7 +10,7 @@ from afd_directo import (
 )
 
 def main():
-    ruta = "slr-1.yal"  # Cambiar si se usa otro archivo .yal
+    ruta = "config.yal"
     contenido = leer_archivo(ruta)
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)
@@ -24,12 +24,19 @@ def main():
 
     postfix_expr = shunting_yard(master_expr)
 
+    # Intentamos construir el árbol. Si falla, aplicamos limpieza.
+    try:
+        root, positions = build_syntax_tree(postfix_expr.split())
+    except ValueError as e:
+        print("\n⚠️ Error al construir el árbol, aplicando limpieza de postfix...")
+        postfix_expr = limpiar_postfix(postfix_expr)
+        print("Postfix corregida:")
+        print(postfix_expr)
+        root, positions = build_syntax_tree(postfix_expr.split())
 
     print("\nResultado en notación Postfix (con #):")
     print(postfix_expr)
 
-    # Construcción del AFD Directo
-    root, positions = build_syntax_tree(postfix_expr.split())
     followpos = compute_followpos(root, positions)
 
     output_dir = f"output_afds/{ruta.split('.')[0]}"
