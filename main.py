@@ -4,6 +4,7 @@ from shunting import shunting_yard, limpiar_postfix
 from afd_serializer import guardar_afd_pickle, cargar_afd_pickle
 from afd_inspector import mostrar_info_afd
 from lexer import lexer
+import json
 
 from afd_directo import (
     build_syntax_tree,
@@ -14,12 +15,22 @@ from afd_directo import (
     st_m
 )
 
+def afd_to_json(afd_dict):
+    return {
+        "transitions": afd_dict["transitions"],
+        "accepted": afd_dict["accepted"],
+        "initial": afd_dict["initial"],
+        "states": {str(list(k)): v for k, v in afd_dict["states"].items()},
+        "state_tags": afd_dict.get("state_tags", {})
+    }
+
 def main():
-    ruta = "slr-2" 
+    ruta = "test" 
     contenido = leer_archivo(ruta + ".yal")
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)
-
+    
+    
     print("Expresión maestra combinada para Shunting:")
     print(master_expr)
 
@@ -29,6 +40,7 @@ def main():
 
     postfix_expr = shunting_yard(master_expr)
 
+    
     # Intentamos construir el árbol. Si falla, aplicamos limpieza.
     try:
         root, positions = build_syntax_tree(st_m(postfix_expr))
@@ -53,7 +65,11 @@ def main():
 
     afd.render(f"{output_dir}/afd", format="png", cleanup=True)
     minimized_afd, afd_dict_min = minimize_afd(afd_dict)
+    minimized_afd.attr(rankdir='LR', size='500,10', dpi='300')
     minimized_afd.render(f"{output_dir}/afd_minimized", format="png", cleanup=True)
+    minimized_afd.render(f"{output_dir}/afd_minimized", format="pdf", cleanup=True)
+
+    print(json.dumps(afd_to_json(afd_dict_min), indent=4))
         
     # Guardar el AFD minimizado en .pkl
     afd_pickle_path = f"{output_dir}/afd_min.pkl"
@@ -65,8 +81,26 @@ def main():
     print(mapping)
     
     # Simulación desde archivo guardado
-    cadena_usuario = input("🔤 Ingresá una cadena para tokenizar: ")
-    
+    print("\n🔍 ¿Cómo querés ingresar la entrada para tokenizar?")
+    print("1. Ingresar una cadena manualmente")
+    print("2. Leer la cadena desde un archivo de texto")
+
+    opcion = input("Seleccioná una opción (1 o 2): ")
+
+    if opcion == '1':
+        cadena_usuario = input("🔤 Ingresá una cadena para tokenizar: ")
+    elif opcion == '2':
+        ruta_archivo = input("📄 Ingresá la ruta del archivo de texto: ")
+        if not os.path.isfile(ruta_archivo):
+            print("⚠️ Archivo no encontrado.")
+            return
+        with open(ruta_archivo, "r", encoding="utf-8") as f:
+            cadena_usuario = f.read()
+            print(f"\n📚 Contenido del archivo leído:\n{cadena_usuario}")
+    else:
+        print("⚠️ Opción inválida. Saliendo.")
+        return
+
     # Cargar el AFD minimizado
     afd_dict = cargar_afd_pickle(afd_pickle_path)
 
