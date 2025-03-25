@@ -1,5 +1,5 @@
 import os
-from Lector import leer_archivo, parse_yal_config, combine_expressions
+from Lector import leer_archivo, parse_yal_config, combine_expressions, validar_estructura_yal
 from shunting import shunting_yard, limpiar_postfix
 from afd_serializer import guardar_afd_pickle, cargar_afd_pickle
 from afd_inspector import mostrar_info_afd
@@ -25,8 +25,17 @@ def afd_to_json(afd_dict):
 
     }
 def main():
-    ruta = "test" 
+    ruta = "slr-1" 
     contenido = leer_archivo(ruta + ".yal")
+     # 🔍 Validar estructura del archivo YAL
+    errores = validar_estructura_yal(contenido)
+    if errores:
+        print("🚫 El archivo .yal contiene errores de estructura:\n")
+        for error in errores:
+            print(error)
+        print("\n🛑 Corre los errores y volvé a intentar.")
+        return  # Cortamos ejecución si hay errores
+    
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)
     
