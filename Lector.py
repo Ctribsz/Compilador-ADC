@@ -173,6 +173,28 @@ def parse_yal_config(texto):
     reglas = parse_reglas_char_by_char(lines)
     return {"definiciones": definiciones, "reglas": reglas}
 
+def reemplazar_punto_literal(expr):
+    """
+    Reemplaza el punto literal '.' por su ASCII '46' cuando aparece como parte de una expresión,
+    evitando confundirlo con el operador de concatenación.
+    """
+    resultado = ""
+    i = 0
+    while i < len(expr):
+        if expr[i] == '.':
+            # Verifica si después hay un grupo o número
+            if i + 1 < len(expr) and (expr[i+1].isdigit() or expr[i+1] == '('):
+                resultado += '46.'
+                i += 1
+            else:
+                resultado += '.'
+                i += 1
+        else:
+            resultado += expr[i]
+            i += 1
+    return resultado
+
+
 def manual_split(expr, delimiter):
     """
     Separa manualmente una cadena por el delimitador, carácter a carácter.
@@ -193,18 +215,19 @@ def manual_split(expr, delimiter):
 def expand_repetition_operators(expr: str) -> str:
     """
     Reemplaza:
-    - A+ por (A)(A)*
-    - A? por (A|_)
+    - A+ por A(A)*
+    - A? por (A|949)
+    Evita paréntesis extra y respeta agrupaciones como "46.(digits)" para '?' correctamente.
     """
     i = 0
     result = ""
     while i < len(expr):
         if expr[i] in ['+', '?'] and i > 0:
-            # Extraer el operando que antecede al operador de repetición.
-            prev = ""
+            # Buscar el operando anterior
             j = len(result) - 1
+
+            # Si termina en ')', retrocede para encontrar grupo
             if result[j] == ')':
-                # Si termina en ')', buscar la pareja de paréntesis de apertura
                 count = 1
                 j -= 1
                 while j >= 0:
@@ -212,21 +235,23 @@ def expand_repetition_operators(expr: str) -> str:
                         count += 1
                     elif result[j] == '(':
                         count -= 1
-                    if count == 0:
-                        break
+                        if count == 0:
+                            break
                     j -= 1
                 prev = result[j:]
                 result = result[:j]
             else:
-                # Si no está entre paréntesis, se asume que el operando es de longitud 1.
-                prev = result[-1]
-                result = result[:-1]
+                # Si es un número (como 46) posiblemente con punto antes → "46." → tomarlo completo
+                k = j
+                while k >= 0 and (result[k].isdigit() or result[k] == '.'):
+                    k -= 1
+                prev = result[k+1:]
+                result = result[:k+1]
+
             if expr[i] == '+':
-                # Agrupar A y luego concatenar con (A)*
-                result += "(" + prev + ")(" + prev + ")*"
+                result += f"{prev}({prev})*"
             elif expr[i] == '?':
-                # Agrupar A en la unión con épsilon
-                result += "(" + prev + "|949)"
+                result += f"({prev}|949)"
             i += 1
         else:
             result += expr[i]
@@ -531,9 +556,12 @@ def expand_identificadores(expresion, definiciones):
             token = expresion[inicio:i]
             if token in definiciones:
                 subexp = expand_identificadores(definiciones[token], definiciones)
-                resultado += "(" + subexp + ")"
+                subexp = reducir_parentesis(subexp)
+                resultado += f"({subexp})"
+
+
             else:
-                if token == "_":
+                if token == ["_", "(_)"]:
                     ALPHABET = obtener_alfabeto()
                     union = "|".join(tok for tok in sorted(ascii_token(x) for x in ALPHABET) if tok)
                     resultado += "(" + union + ")"
@@ -566,6 +594,26 @@ def limpiar_parentesis(expresion):
             break
     return expresion
 
+def reducir_parentesis(expr):
+    while expr.startswith('(') and expr.endswith(')'):
+        inner = expr[1:-1]
+        count = 0
+        balanced = True
+        for ch in inner:
+            if ch == '(':
+                count += 1
+            elif ch == ')':
+                count -= 1
+            if count < 0:
+                balanced = False
+                break
+        if balanced and count == 0:
+            expr = inner
+        else:
+            break
+    return expr
+
+
 def expand_optionals(expr):
     """
     No se aplicará transformación a '?'; se retorna la expresión sin cambios.
@@ -591,15 +639,21 @@ def limpiar_expresion(expr):
 
 def insertar_concatenaciones(expr):
     """
-    Inserta '.' explícitamente donde se requiere concatenación entre tokens,
-    respetando números de más de un dígito como 43 o 949.
+    Inserta '.' donde se requiere concatenación entre tokens.
+    Evita insertar '.' entre operadores de unión '|' y mantiene literales agrupadas.
     """
     resultado = ""
     i = 0
+
+    def es_token_que_concatenamos(ch):
+        return ch.isdigit() or ch == ')' or ch == '*' or ch == '949'
+
+    def es_token_inicio(ch):
+        return ch.isdigit() or ch == '(' or ch == '949'
+
     while i < len(expr):
         actual = expr[i]
 
-        # Leer token actual completo (por ejemplo: un número como 43 o 949)
         token = ""
         if actual.isdigit():
             while i < len(expr) and expr[i].isdigit():
@@ -609,13 +663,9 @@ def insertar_concatenaciones(expr):
             token = actual
             i += 1
 
-        # Agregar '.' si corresponde con el anterior
         if resultado:
             prev = resultado[-1]
-            if (
-                (prev.isdigit() or prev == ')' or prev == '*') and
-                (token[0].isdigit() or token[0] == '(' or token[0] in ['"', "'"])
-            ):
+            if es_token_que_concatenamos(prev) and es_token_inicio(token[0]):
                 resultado += '.'
 
         resultado += token
@@ -632,14 +682,18 @@ def combine_expressions(config):
 
         # Convertimos caracteres literales a ASCII
         if ((raw_expr.startswith("'") and raw_expr.endswith("'")) or 
-            (raw_expr.startswith('"') and raw_expr.endswith('"'))) and len(raw_expr[1:-1]) == 1:
-            final_expr = ascii_token(raw_expr[1:-1])
+            (raw_expr.startswith('"') and raw_expr.endswith('"'))):
+            # Procesar cada caracter como ASCII y concatenarlo con '.'
+            contenido = raw_expr[1:-1]
+            ascii_lits = [ascii_token(ch) for ch in contenido]
+            final_expr = ".".join(ascii_lits)
         elif len(raw_expr) == 1:
             final_expr = ascii_token(raw_expr)
         else:
             exp_ids = expand_identificadores(raw_expr, config["definiciones"])
             expanded = expand_rangos(exp_ids)
             limpio = limpiar_parentesis(expanded)
+            limpio = reemplazar_punto_literal(limpio)
             final_expr = expand_repetition_operators(expand_optionals(limpio))
 
         # Caso especial: si la expresión está vacía o es solo épsilon
@@ -652,21 +706,26 @@ def combine_expressions(config):
         tag_number = 1000 + rule_id
 
         # Concatenamos la expresión con su tag como hoja final
-        annotated_expr = f"(({final_expr}).#{tag_number})"
+        # Asegura solo un nivel de agrupación para la expresión antes de concatenar el tag
+        final_expr = reducir_parentesis(final_expr)
+        final_expr = f"({final_expr})"
+        annotated_expr = f"{final_expr}.#{tag_number}"
+
+
 
         combined.append(annotated_expr)
         mapping[f"#{tag_number}"] = regla["accion"]
         rule_id += 1
 
     # Unimos todas las expresiones usando unión
-    master_expr = " | ".join(expr for expr in combined if sp_manual(expr))
+    master_expr = "|".join(expr for expr in combined if sp_manual(expr))
     master_expr = limpiar_expresion(master_expr)
 
     return master_expr, mapping
 
 # MAIN
 if __name__ == '__main__':
-    ruta_yal = "slr-2.yal"  # Cambia este nombre por el de tu archivo YAL.
+    ruta_yal = "slr-3.yal"  # Cambia este nombre por el de tu archivo YAL.
     contenido = leer_archivo(ruta_yal)
     config = parse_yal_config(contenido)
 
@@ -676,7 +735,7 @@ if __name__ == '__main__':
         exp_ids = expand_identificadores(expresion, config["definiciones"])
         expanded = expand_rangos(exp_ids)
         limpio = limpiar_parentesis(expanded)
-        final = expand_optionals(limpio)
+        final = expand_optionals(reducir_parentesis(limpio))
         print(f"  Expandidas: {expanded}")
         print(f"  Limpio: {limpio}")
         print(f"  Final con opcionales: {final}\n")
