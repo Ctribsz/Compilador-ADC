@@ -17,6 +17,20 @@ def is_operator(c):
 def is_operand(c):
     return c.isalnum() and not is_operator(c)
 
+def epsilon_closure(state, positions, followpos):
+    closure = set(state)
+    stack = list(state)
+    while stack:
+        pos = stack.pop()
+        symbol = positions[pos].value
+        if symbol == '949':  # es épsilon
+            for fp in followpos.get(pos, set()):
+                if fp not in closure:
+                    closure.add(fp)
+                    stack.append(fp)
+    return closure
+
+
 def insert_concatenation_operators(infix):
     output = []
     for i in range(len(infix)):
@@ -247,7 +261,7 @@ def generate_afd(root, positions, followpos):
     afd = graphviz.Digraph('AFD')
     afd.attr(rankdir='LR')
 
-    initial = frozenset(root.firstpos)
+    initial = frozenset(epsilon_closure(root.firstpos, positions, followpos))
     states = {initial: 'A'}
     unmarked = [initial]
     count = 0
@@ -272,17 +286,18 @@ def generate_afd(root, positions, followpos):
         transiciones = {}
         for pos in state:
             symbol = positions[pos].value
-            if symbol.isdigit() and int(symbol) >= 1000:
-                continue  # ignorar marcadores
+            if symbol == '949' or symbol.startswith('#'):
+                continue
             if symbol not in transiciones:
                 transiciones[symbol] = set()
             transiciones[symbol] |= followpos[pos]
+
 
         afd_dict['transitions'][state_name] = {}
         for symbol, next_positions in transiciones.items():
             if not next_positions:
                 continue
-            next_state = frozenset(next_positions)
+            next_state = frozenset(epsilon_closure(next_positions, positions, followpos))
             if next_state not in states:
                 count += 1
                 states[next_state] = chr(ord('A') + count)
@@ -314,8 +329,10 @@ def minimize_afd(afd_dict):
     groups, min_trans, min_accepted, state_map = {}, {}, set(), {}
     
     for state, trans in afd_dict['transitions'].items():
-        key = (frozenset(trans.items()), state in accepted)
+        tag = afd_dict.get('state_tags', {}).get(state, None)
+        key = (frozenset(trans.items()), state in accepted, tag)
         groups.setdefault(key, []).append(state)
+
     
     for i, group in enumerate(groups.values()):
         name = f"M{i}"
