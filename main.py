@@ -15,8 +15,15 @@ from afd_directo import (
     st_m
 )
 
+def afd_to_json(afd_dict):
+    return {
+        "transitions": afd_dict["transitions"],
+        "accepted": afd_dict["accepted"],
+        "initial": afd_dict["initial"],
+        "states": {str(list(k)): v for k, v in afd_dict["states"].items()},
+        "state_tags": afd_dict.get("state_tags", {})
 
-
+    }
 def main():
     ruta = "test" 
     contenido = leer_archivo(ruta + ".yal")
@@ -62,6 +69,7 @@ def main():
     minimized_afd.render(f"{output_dir}/afd_minimized", format="png", cleanup=True)
     minimized_afd.render(f"{output_dir}/afd_minimized", format="pdf", cleanup=True)
 
+    print(json.dumps(afd_to_json(afd_dict_min), indent=4))
         
     # Guardar el AFD minimizado en .pkl
     afd_pickle_path = f"{output_dir}/afd_min.pkl"
