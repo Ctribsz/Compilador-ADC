@@ -38,8 +38,10 @@ def lexer(cadena, afd_dict, mapping, debug=True):
                 break
 
         if ultimo_estado_final is None:
-            raise ValueError(f"❌ Error léxico: símbolo inesperado '{cadena[pos]}' en posición {pos}")
-
+            print(f"❌ Error léxico: símbolo inesperado '{cadena[pos]}' en posición {pos}")
+            pos = pos+1
+            continue
+        
         lexema = cadena[pos:ultimo_token_pos]
         # Usamos el tag asignado al estado aceptante para determinar el token
         if ultimo_estado_final in afd_dict.get('state_tags', {}):
