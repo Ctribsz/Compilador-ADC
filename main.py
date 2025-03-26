@@ -115,12 +115,13 @@ def main():
 
     # Simular el análisis léxico
     tokens = lexer(cadena_usuario, afd_dict, mapping, debug=True)
-
-    # Mostrar tokens finales
-    print("\n🎯 Tokens generados:")
-    for tipo, lexema in tokens:
-        print(f"  {tipo}: '{lexema}'")
-
+    
+    output_file='salida_tokens.txt'
+    with open(output_file, 'w', encoding='utf-8') as out:
+        # Mostrar tokens finales
+        out.write("\n🎯 Tokens generados:\n")
+        for tipo, lexema in tokens:
+            out.write(f"  {tipo}: '{lexema}'\n")
 
 if __name__ == '__main__':
     main()
