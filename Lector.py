@@ -723,63 +723,7 @@ def combine_expressions(config):
 
     return master_expr, mapping
 
-def validar_estructura_yal(texto):
-    errores = []
 
-    # 1. Comentarios mal cerrados
-    abiertos = 0
-    i = 0
-    while i < len(texto):
-        if texto[i:i+2] == "(*":
-            abiertos += 1
-            i += 2
-        elif texto[i:i+2] == "*)":
-            if abiertos > 0:
-                abiertos -= 1
-            else:
-                errores.append("❌ Comentario cerrado sin haber sido abierto.")
-            i += 2
-        else:
-            i += 1
-    if abiertos > 0:
-        errores.append("❌ Comentarios sin cerrar: falta '*)'.")
-
-    # 2. Línea sin 'let' pero con '='
-    lineas = texto.split('\n')
-    tiene_let = False
-    for num_linea, linea in enumerate(lineas):
-        stripped = linea.strip()
-        if stripped.startswith("let"):
-            tiene_let = True
-        elif '=' in stripped and not stripped.startswith("let") and not stripped.startswith("rule"):
-            errores.append(f"❌ Línea {num_linea+1}: definición sin 'let': {linea.strip()}")
-
-    if not tiene_let:
-        errores.append("❌ No se encontró ninguna definición usando 'let'.")
-
-    # 3. Verifica que exista la sección 'rule tokens ='
-    encontrado_rule = False
-    for linea in lineas:
-        tokens = linea.strip().split()
-        if len(tokens) >= 3 and tokens[0] == "rule" and tokens[1] == "tokens" and tokens[2] == "=":
-            encontrado_rule = True
-            break
-    if not encontrado_rule:
-        errores.append("❌ No se encontró la sección obligatoria 'rule tokens ='.")
-    
-    # 4. Validar reglas dentro de rule tokens
-    en_reglas = False
-    for num_linea, linea in enumerate(lineas):
-        if "rule tokens" in linea:
-            en_reglas = True
-            continue
-        if en_reglas:
-            if "{" in linea and "}" not in linea:
-                errores.append(f"❌ Línea {num_linea+1}: '{{' sin '}}' en regla.")
-            elif "}" in linea and "{" not in linea:
-                errores.append(f"❌ Línea {num_linea+1}: '}}' sin '{{' en regla.")
-
-    return errores
 
 # MAIN
 if __name__ == '__main__':
