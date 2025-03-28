@@ -53,8 +53,6 @@ def lexer(cadena, afd_dict, mapping, output_file='salida_logs.txt', debug=True):
             tokens.append((token, lexema))
             if debug:
                 out.write(f"✔️ Token: {token}, lexema: '{lexema}'\n")
-                for est, sym, sig in recorrido:
-                    out.write(f"   {est} --{sym}--> {sig}\n")
             pos = ultimo_token_pos
 
     return tokens
