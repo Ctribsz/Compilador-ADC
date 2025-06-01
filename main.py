@@ -25,7 +25,7 @@ def afd_to_json(afd_dict):
     }
 
 def main():
-    ruta = "slr-1" 
+    ruta = "slr-4" 
     contenido = leer_archivo(ruta + ".yal")
      # 🔍 Validar estructura del archivo YAL
     errores = validar_estructura_yal(contenido)
@@ -82,7 +82,7 @@ def main():
         
     # Guardar el AFD minimizado en .pkl
     afd_pickle_path = f"{output_dir}/afd_min.pkl"
-    guardar_afd_pickle(afd_dict_min, afd_pickle_path)
+    guardar_afd_pickle(afd_dict_min, mapping, afd_pickle_path)
 
     print("\nEstados de aceptación:", afd_dict['accepted'])
     print(f"\nDiagramas generados en: {output_dir}")
