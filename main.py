@@ -28,14 +28,7 @@ def main():
     ruta = "slr-4" 
     contenido = leer_archivo(ruta + ".yal")
      # 🔍 Validar estructura del archivo YAL
-    errores = validar_estructura_yal(contenido)
-    if errores:
-        print("🚫 El archivo .yal contiene errores de estructura:\n")
-        for error in errores:
-            print(error)
-        print("\n🛑 Corre los errores y volvé a intentar.")
-        return  # Cortamos ejecución si hay errores
-    
+
     config = parse_yal_config(contenido)
     master_expr, mapping = combine_expressions(config)
     

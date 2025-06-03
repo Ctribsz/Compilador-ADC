@@ -9,10 +9,10 @@ let str = (_)*
 let digit = ['0'-'9']
 let digits = digit+
 let id = letter(letter|str|digit)*
-let number = digits(.digits)?('E'['+''-']?digits)?
+let number = digits('.'digits)?('E'['+''-']?digits)?
 
 rule tokens = 
-    ws
+    ws        { return WHITESPACE }
   | id        { return ID }               (* Cambie por una acción válida, que devuelva el token *)
   | number    { return NUMBER }
   | ';'       { return SEMICOLON }
@@ -25,5 +25,6 @@ rule tokens =
   | '/'       { return DIV }
   | '('       { return LPAREN }
   | ')'       { return RPAREN }
+  | '.'       { return POINT }
 
 (* Introducir cualquier trailer aqui *)
